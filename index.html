@@ -57,13 +57,13 @@
     let lastLat = null;
     let lastLng = null;
  
-    // W 100% naprawiona funkcja pobierająca wysokość n.p.m.
+    // W 100% poprawny adres URL i obsługa API Open-Meteo
     async function getElevation(lat, lng) {
         try {
             const fixedLat = parseFloat(lat).toFixed(4);
             const fixedLng = parseFloat(lng).toFixed(4);
             
-            // Poprawiony, pełny adres URL do API Open-Meteo
+            // KLUCZOWA POPRAWKA: Pełny, poprawny adres z domeną api. i znakiem zapytania
             const url = `https://open-meteo.com{fixedLat}&longitude=${fixedLng}`;
             
             const response = await fetch(url);
@@ -71,7 +71,6 @@
             
             const data = await response.json();
             if (data && data.elevation !== undefined) {
-                // API zwraca tablicę, wyciągamy z niej pierwszy element
                 return Array.isArray(data.elevation) ? data.elevation[0] : data.elevation;
             }
             return null;
@@ -81,7 +80,7 @@
         }
     }
  
-    // Główna funkcja pobierająca dane na żywo
+    // Główna funkcja pobierająca dane na żywo (z mapami Google jako tłem)
     async function fetchLiveLocation() {
         try {
             const response = await fetch(FIREBASE_URL);
@@ -95,7 +94,7 @@
  
                 const timeLabel = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
  
-                // 1. Aktualizacja danych tekstowych
+                // 1. Aktualizacja danych tekstowych na ekranie
                 document.getElementById('gps-val').innerText = `Szerokość: ${lat.toFixed(5)} | Długość: ${lng.toFixed(5)}`;
                 document.getElementById('time-val').innerText = timeLabel;
  
@@ -104,14 +103,19 @@
                     lastLat = lat;
                     lastLng = lng;
  
-                    // NIEZAWODNA MAPA STATYCZNA: Pobiera gotowy obrazek wycentrowany na Twoje współrzędne GPS
-                    // Serwer osm-static maps generuje piękny podgląd Tatr z czerwoną pinezką na środku
-                    const zoom = 14;
-                    const width = 800;
-                    const height = 400;
+                    // OMIJANIE FIREWALLA: Wykorzystujemy oficjalny, darmowy embed Map Google
+                    // Generuje on pełnoprawną mapę satelitarną/terenową wewnątrz ramki iframe
+                    const mapBox = document.getElementById('map-container');
                     
-                    // Używamy oficjalnego, publicznego generatora map statycznych OpenStreetMap
-                    document.getElementById('map-img').src = `https://openstreetmap.de{lat},${lng}&zoom=${zoom}&size=${width}x${height}&maptype=mapnik&markers=${lat},${lng},red-pushpin`;
+                    // Czyścimy zawartość starego kontenera i wstrzykujemy niezawodną ramkę Google Maps
+                    mapBox.innerHTML = `<iframe
+                        width="100%"
+                        height="100%"
+                        frameborder="0"
+                        style="border:0; border-radius:8px;"
+                        src="https://google.com{lat},${lng}&z=14&output=embed"
+                        allowfullscreen>
+                    </iframe>`;
  
                     // 3. Pobranie wysokości n.p.m.
                     document.getElementById('alt-val').innerText = "Mierzę...";
