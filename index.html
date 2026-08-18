@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Relacja na Żywo - Moja Trasa</title>
     
-    <!-- Styl dla mapy musi zostać w sekcji head -->
-    <link rel="stylesheet" href="https://leafletjs.com" />
+    <!-- Styl mapy pobierany bezpiecznie przez mechanizm rezerwowy -->
+    <link rel="stylesheet" href="https://jsdelivr.net" />
  
     <style>
         body { font-family: Arial, sans-serif; margin: 0; padding: 10px; background: #f4f4f4; }
@@ -42,19 +42,15 @@
     </div>
 </div>
  
-<!-- BIBLIOTEKI PRZENIESIONE NA SAM DÓŁ – ładują się przed uruchomieniem skryptu -->
-<script src="https://leafletjs.com"></script>
-<script src="https://unpkg.com"></script>
- 
 <script>
     // --- KONFIGURACJA ---
     // Wklej tutaj URL swojej bazy danych Firebase Realtime Database:
-    const FIREBASE_URL = "https://firebaseio.com";
+    const FIREBASE_URL = "https://ggr-live-tracker-default-rtdb.europe-west1.firebasedatabase.app";
  
-    // Zmienne globalne
+    // Zmienne globalne systemu
     let map, userMarker, pathLine, elevationChart;
  
-    // Funkcja pobierająca dokładną wysokość n.p.m.
+    // Funkcja pobierająca wysokość n.p.m.
     async function getElevation(lat, lng) {
         try {
             const response = await fetch(`https://open-meteo.com{lat}&longitude=${lng}`);
@@ -106,8 +102,8 @@
         }
     }
  
-    // BEZPIECZNY START: Uruchamia się dopiero, gdy przeglądarka załaduje cały plik HTML i biblioteki
-    window.addEventListener('DOMContentLoaded', () => {
+    // Inicjalizacja aplikacji po załadowaniu skryptów zewnętrznych
+    function initApp() {
         // Inicjalizacja Mapy
         map = L.map('map').setView([52.23, 21.01], 13);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -135,10 +131,29 @@
             options: { responsive: true, scales: { y: { beginAtZero: false } } }
         });
  
-        // Uruchomienie odświeżania bazy danych co 10 sekund
+        // Uruchomienie pętli pobierania danych z telefonu
         setInterval(fetchLiveLocation, 10000);
         fetchLiveLocation();
-    });
+    }
+ 
+    // AUTOMATYCZNY ŁADOWACZ REZERWOWY (Omija zapory sieciowe i błąd "L is not defined")
+    function loadScriptsSequentially() {
+        const leafletScript = document.createElement('script');
+        leafletScript.src = "https://jsdelivr.net";
+        
+        leafletScript.onload = () => {
+            const chartScript = document.createElement('script');
+            chartScript.src = "https://jsdelivr.net";
+            chartScript.onload = () => {
+                // Gdy oba skrypty załadują się w idealnej kolejności, uruchom mapę
+                initApp();
+            };
+            document.body.appendChild(chartScript);
+        };
+        document.body.appendChild(leafletScript);
+    }
+ 
+    window.addEventListener('DOMContentLoaded', loadScriptsSequentially);
 </script>
  
 </body>
