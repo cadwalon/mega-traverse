@@ -54,7 +54,7 @@
     async function getElevation(lat, lng) {
         try {
             const response = await fetch(`https://open-meteo.com{lat}&longitude=${lng}`);
-            const data = await response.json();
+            const data = await lokacja.json();
             return data.elevation;
         } catch (error) {
             console.error("Błąd pobierania wysokości n.p.m.:", error);
