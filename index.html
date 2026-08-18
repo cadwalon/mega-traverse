@@ -50,57 +50,88 @@
  
 <script>
     // --- KONFIGURACJA ---
+    // Twoja poprawna baza danych:
     const FIREBASE_URL = "https://ggr-live-tracker-default-rtdb.europe-west1.firebasedatabase.app/lokalizacja.json";
  
-    // Zmienne do kalibracji prostej mapy statycznej (podglądowej)
-    let centerLat = 52.23;
-    let centerLng = 21.01;
+    // Zmienne pamięci podręcznej, aby nie przeładowywać mapy bez potrzeby
+    let lastLat = null;
+    let lastLng = null;
  
+    // Naprawiona funkcja pobierająca wysokość n.p.m.
     async function getElevation(lat, lng) {
         try {
-            const response = await fetch(`https://open-meteo.com{lat}&longitude=${lng}`);
-            const data = await lokalizacja.json();
-            return data.elevation;
+            // Precyzyjne zaokrąglenie współrzędnych do 4 miejsc po przecinku (wymóg stabilności API)
+            const fixedLat = parseFloat(lat).toFixed(4);
+            const fixedLng = parseFloat(lng).toFixed(4);
+            
+            const response = await fetch(`https://open-meteo.com{fixedLat}&longitude=${fixedLng}`);
+            if (!response.ok) return null;
+            
+            const data = await response.json();
+            // Sprawdzamy czy API zwróciło poprawną tablicę lub pojedynczą wartość
+            if (data && data.elevation !== undefined) {
+                return Array.isArray(data.elevation) ? data.elevation[0] : data.elevation;
+            }
+            return null;
         } catch (error) {
+            console.error("Błąd API wysokości:", error);
             return null;
         }
     }
  
+    // Główna funkcja pobierająca dane na żywo
     async function fetchLiveLocation() {
         try {
             const response = await fetch(FIREBASE_URL);
             const data = await response.json();
             
-            if (data && data.lat && data.lng) {
+            if (data && data.lat !== undefined && data.lng !== undefined) {
                 const lat = parseFloat(data.lat);
                 const lng = parseFloat(data.lng);
+                
+                // Zabezpieczenie przed błędnymi współrzędnymi (np. 0.0 z GPS)
+                if (lat === 0 || lng === 0 || isNaN(lat) || isNaN(lng)) return;
+ 
                 const timeLabel = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
  
-                // Wyświetlenie surowych danych tekstowych
+                // 1. Aktualizacja surowych danych tekstowych na ekranie
                 document.getElementById('gps-val').innerText = `Szerokość: ${lat.toFixed(5)} | Długość: ${lng.toFixed(5)}`;
                 document.getElementById('time-val').innerText = timeLabel;
  
-                // Dynamiczna podmiana kafelka mapy z darmowego serwera Wikimedia (rzadko blokowany)
-                if(Math.abs(centerLat - lat) > 0.05 || Math.abs(centerLng - lng) > 0.05) {
-                    centerLat = lat;
-                    centerLng = lng;
-                    document.getElementById('map-img').src = `https://wikimedia.org{lat}/${lng}.png`;
-                }
+                // 2. Warunek: Aktualizuj mapę i wysokość tylko wtedy, gdy pozycja faktycznie się zmieniła
+                if (lat !== lastLat || lng !== lastLng) {
+                    lastLat = lat;
+                    lastLng = lng;
  
-                // Pobranie i wyświetlenie wysokości n.p.m.
-                const elevation = await getElevation(lat, lng);
-                if (elevation !== null) {
-                    document.getElementById('alt-val').innerText = `${Math.round(elevation)} m`;
+                    // STABILNY SERWER MAPY: Używamy uniwersalnego kafelka OpenStreetMap (Zoom 14 - idealny w góry)
+                    // Wykorzystujemy darmowy render ze stałego serwera openstreetmap.org
+                    const zoom = 14;
+                    
+                    // Matematyczny algorytm zamiany współrzędnych GPS na numer kafelka OpenStreetMap (Slippy Map)
+                    const xTile = Math.floor((lng + 180) / 360 * Math.pow(2, zoom));
+                    const yTile = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom));
+                    
+                    // Podmiana obrazu tła mapy na pewny, niezablokowany zasób
+                    document.getElementById('map-img').src = `https://openstreetmap.org{zoom}/${xTile}/${yTile}.png`;
+ 
+                    // 3. Pobranie i wyświetlenie wysokości n.p.m.
+                    const elevation = await getElevation(lat, lng);
+                    if (elevation !== null && !isNaN(elevation)) {
+                        document.getElementById('alt-val').innerText = `${Math.round(elevation)} m n.p.m.`;
+                    } else {
+                        document.getElementById('alt-val').innerText = "Mierzę...";
+                    }
                 }
             }
         } catch (error) {
-            console.error("Błąd Firebase:", error);
+            console.error("Błąd pobierania z Firebase:", error);
         }
     }
  
-    // Start pętli odświeżania
+    // Start pętli odświeżania po pełnym załadowaniu struktury HTML
     window.addEventListener('DOMContentLoaded', () => {
-        setInterval(fetchLiveLocation, 10000);
+        // Sprawdzaj bazę co 7 sekund (szybsza reakcja na żywo)
+        setInterval(fetchLiveLocation, 7000);
         fetchLiveLocation();
     });
 </script>
