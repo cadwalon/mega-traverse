@@ -64,7 +64,7 @@
             const fixedLng = parseFloat(lng).toFixed(4);
             
             // KLUCZOWA POPRAWKA: Pełny, poprawny adres z domeną api. i znakiem zapytania
-            const url = `https://open-meteo.com{fixedLat}&longitude=${fixedLng}`;
+            const url = `https://open-meteo.com${fixedLat}&longitude=${fixedLng}`;
             
             const response = await fetch(url);
             if (!response.ok) return null;
