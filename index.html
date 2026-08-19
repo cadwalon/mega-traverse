@@ -3,10 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Relacja na Żywo - Moja Trasa</title>
+    <title>Relacja na Żywo - TATRY MEGA TRAVERSE</title>
     
     <!-- Blokada błędu favicon -->
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+
+    <!-- Wstrzyknięcie biblioteki Chart.js bezpośrednio, omijając blokady CDN -->
+    <script src="https://cloudflare.com" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
     <style>
         body { font-family: Arial, sans-serif; margin: 0; padding: 10px; background: #f4f4f4; }
@@ -16,12 +19,13 @@
         .card { background: white; padding: 15px; border-radius: 8px; flex: 1; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         .card h3 { margin: 0 0 5px 0; color: #555; font-size: 14px; }
         .card p { margin: 0; font-size: 24px; font-weight: bold; color: #007bff; }
+        .chart-container { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-top: 15px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Wyprawa na Żywo 🏃‍♂️</h2>
+    <h2>TATRY MEGA TRAVERSE - Relacja Live 🏃‍♂️🏔️</h2>
     
     <div class="stats">
         <div class="card">
@@ -34,14 +38,19 @@
         </div>
     </div>
 
-    <!-- Samowystarczalny wizualizator pozycji GPS (Niezawodna mapa OpenStreetMap) -->
+    <!-- Wizualizator pozycji GPS (Mapa OpenStreetMap) -->
     <div class="map-box" id="map-container">
         <p style="color: #666;">Czekam na sygnał z telefonu, aby wyrysować mapę...</p>
     </div>
 
     <div class="card">
         <h3>Współrzędne GPS (Live)</h3>
-        <p id="gps-val" style="font-size: 16px; padding-top: 5px;">Czekam na sygnał z telefonu...</p>
+        <p id="gps-val" style="font-size: 16px; padding-top: 5px;">Czekam na sygnał...</p>
+    </div>
+
+    <!-- Kontener na wykres profilu wysokościowego -->
+    <div class="chart-container">
+        <canvas id="liveChart" style="width:100%; height:250px;"></canvas>
     </div>
 </div>
 
@@ -49,15 +58,15 @@
     // --- KONFIGURACJA ---
     const FIREBASE_URL = "https://ggr-live-tracker-default-rtdb.europe-west1.firebasedatabase.app/lokalizacja.json"; 
 
-    // Zmienne pamięci podręcznej
+    // Zmienne pamięci podręcznej i instancja wykresu
     let lastLat = null;
     let lastLng = null;
+    let elevationChart = null;
 
-    // Bezpieczna, odporna na CORS i wtyczki funkcja pobierania wysokości n.p.m.
+    // Pobieranie wysokości n.p.m. z Open-Meteo
     async function getElevation(lat, lng) {
         try {
-            // Oficjalny punkt końcowy Open-Meteo zbudowany przez natywny obiekt URL
-            const apiUrl = new URL("https://api.open-meteo.com/v1/elevation");
+            const apiUrl = new URL("https://open-meteo.com");
             apiUrl.searchParams.append("latitude", parseFloat(lat).toFixed(4));
             apiUrl.searchParams.append("longitude", parseFloat(lng).toFixed(4));
             
@@ -66,13 +75,40 @@
             
             const data = await response.json();
             if (data && data.elevation !== undefined) {
-                return Array.isArray(data.elevation) ? data.elevation[0] : data.elevation;
+                return Array.isArray(data.elevation) ? data.elevation : data.elevation;
             }
             return null;
         } catch (error) {
-            console.error("Błąd pobierania wysokości:", error);
             return null;
         }
+    }
+
+    // Funkcja inicjalizująca wykres liniowy
+    function initChart() {
+        const ctx = document.getElementById('liveChart').getContext('2d');
+        elevationChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [], // Godziny aktualizacji
+                datasets: [{
+                    label: 'Profil wysokościowy (m n.p.m.)',
+                    data: [], // Wartości wysokości
+                    borderColor: '#007bff',
+                    backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                    fill: true,
+                    tension: 0.3,
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: false, title: { display: true, text: 'Metry n.p.m.' } },
+                    x: { title: { display: true, text: 'Czas aktualizacji' } }
+                }
+            }
+        });
     }
 
     // Główna funkcja pobierająca dane na żywo
@@ -89,36 +125,46 @@
 
                 const timeLabel = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
 
-                // 1. Aktualizacja danych tekstowych na ekranie
+                // 1. Aktualizacja danych tekstowych
                 document.getElementById('gps-val').innerText = "Szerokość: " + lat.toFixed(5) + " | Długość: " + lng.toFixed(5);
                 document.getElementById('time-val').innerText = timeLabel;
 
-                // 2. Aktualizacja mapy i wysokości przy zmianie pozycji
+                // 2. Aktualizacja mapy, wysokości i wykresu przy zmianie pozycji
                 if (lat !== lastLat || lng !== lastLng) {
                     lastLat = lat;
                     lastLng = lng;
 
+                    // Budowanie ramki OpenStreetMap (Zoom z bezpiecznym marginesem)
                     const mapBox = document.getElementById('map-container');
-                    
-                    // Definiujemy obszar wyświetlania wokół pozycji (BBOX) dla OpenStreetMap
                     const offset = 0.005;
                     const minLng = lng - offset;
                     const minLat = lat - offset;
                     const maxLng = lng + offset;
                     const maxLat = lat + offset;
                     
-                    // Budujemy pancerny link embed OpenStreetMap, którego wtyczki nie są w stanie uszkodzić
                     const openStreetMapUrl = "https://openstreetmap.org" + minLng + "," + minLat + "," + maxLng + "," + maxLat + "&layer=mapnik&marker=" + lat + "," + lng;
-                    
-                    // Wstrzyknięcie czystej ramki mapy
                     mapBox.innerHTML = '<iframe width="100%" height="100%" frameborder="0" style="border:0; border-radius:8px;" src="' + openStreetMapUrl + '" allowfullscreen></iframe>';
 
-                    // 3. Pobranie wysokości n.p.m.
+                    // 3. Pobranie wysokości n.p.m. i dodanie do wykresu
                     document.getElementById('alt-val').innerText = "Mierzę...";
                     const elevation = await getElevation(lat, lng);
                     
                     if (elevation !== null && !isNaN(elevation)) {
-                        document.getElementById('alt-val').innerText = Math.round(elevation) + " m n.p.m.";
+                        const finalAlt = Math.round(elevation);
+                        document.getElementById('alt-val').innerText = finalAlt + " m n.p.m.";
+                        
+                        // Dodawanie punktu na wykres w czasie rzeczywistym
+                        if (elevationChart) {
+                            elevationChart.data.labels.push(timeLabel);
+                            elevationChart.data.datasets[0].data.push(finalAlt);
+                            
+                            // Trzymamy maksymalnie 30 ostatnich punktów, aby wykres był czytelny
+                            if (elevationChart.data.labels.length > 30) {
+                                elevationChart.data.labels.shift();
+                                elevationChart.data.datasets[0].data.shift();
+                            }
+                            elevationChart.update();
+                        }
                     } else {
                         document.getElementById('alt-val').innerText = "Błąd sieci";
                     }
@@ -129,10 +175,10 @@
         }
     }
 
-    // Start pętli odświeżania po pełnym załadowaniu struktury HTML
+    // Start aplikacji
     window.addEventListener('DOMContentLoaded', () => {
-        // Odpytywanie bazy co 7 sekund
-        setInterval(fetchLiveLocation, 7000);
+        initChart(); // Uruchomienie pustego wykresu
+        setInterval(fetchLiveLocation, 7000); // Odświeżanie bazy co 7 sekund
         fetchLiveLocation();
     });
 </script>
