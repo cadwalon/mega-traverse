@@ -7,7 +7,7 @@
     
     <!-- Blokada błędu favicon -->
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
- 
+
     <style>
         body { font-family: Arial, sans-serif; margin: 0; padding: 10px; background: #f4f4f4; }
         .container { max-width: 1000px; margin: 0 auto; }
@@ -16,12 +16,10 @@
         .card { background: white; padding: 15px; border-radius: 8px; flex: 1; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         .card h3 { margin: 0 0 5px 0; color: #555; font-size: 14px; }
         .card p { margin: 0; font-size: 24px; font-weight: bold; color: #007bff; }
-        .gps-dot { width: 14px; height: 14px; background: red; border-radius: 50%; position: absolute; border: 2px white solid; box-shadow: 0 0 8px rgba(0,0,0,0.5); transition: all 0.5s ease; }
-        .map-bg { width: 100%; height: 100%; object-fit: cover; opacity: 0.7; }
     </style>
 </head>
 <body>
- 
+
 <div class="container">
     <h2>Wyprawa na Żywo 🏃‍♂️</h2>
     
@@ -35,61 +33,51 @@
             <p id="time-val" style="font-size: 16px; padding-top: 8px;">--:--:--</p>
         </div>
     </div>
- 
-    <!-- Samowystarczalny wizualizator pozycji GPS -->
+
+    <!-- Samowystarczalny wizualizator pozycji GPS (ramka Google Maps) -->
     <div class="map-box" id="map-container">
-        <img class="map-bg" src="https://wikimedia.org" id="map-img" alt="Mapa">
-        <div class="gps-dot" id="dot" style="top: 50%; left: 50%;"></div>
+        <p style="color: #666;">Czekam na sygnał z telefonu, aby wyrysować mapę...</p>
     </div>
- 
+
     <div class="card">
         <h3>Współrzędne GPS (Live)</h3>
         <p id="gps-val" style="font-size: 16px; padding-top: 5px;">Czekam na sygnał z telefonu...</p>
     </div>
 </div>
- 
+
 <script>
     // --- KONFIGURACJA ---
-    // Twoja poprawna baza danych:
-    const FIREBASE_URL = "https://ggr-live-tracker-default-rtdb.europe-west1.firebasedatabase.app/lokalizacja.json";
- 
+    const FIREBASE_URL = "https://ggr-live-tracker-default-rtdb.europe-west1.firebasedatabase.app/lokalizacja.json"; 
+
     // Zmienne pamięci podręcznej, aby nie przeładowywać mapy bez potrzeby
     let lastLat = null;
     let lastLng = null;
- 
-    // Alternatywna funkcja pobierająca wysokość z serwerów USGS (U.S. Geological Survey)
+
+    // Bezbłędna funkcja pobierająca wysokość z polskiego rządowego Geoportalu (GUGiK)
     async function getElevation(lat, lng) {
         try {
-            const fixedLat = parseFloat(lat).toFixed(5);
-            const fixedLng = parseFloat(lng).toFixed(5);
+            const x = parseFloat(lng);
+            const y = parseFloat(lat);
             
-            // Używamy darmowego, rządowego API, które rzadko bywa blokowane przez firmowe zapory
-            const url = "https://nationalmap.gov" + fixedLng + "&y=" + fixedLat + "&units=Meters&output=json";
+            const url = "https://gugik.gov.pl" + x + "&y=" + y;
             
             const response = await fetch(url);
             if (!response.ok) return null;
             
             const text = await response.text();
+            const elevation = parseFloat(text.trim());
             
-            // Zabezpieczenie przed stroną błędu HTML
-            if (text.trim().startsWith("<")) {
-                console.warn("Zapora sieciowa zablokowała serwer wysokości.");
-                return null;
-            }
-            
-            const data = JSON.parse(text);
-            // Struktura odpowiedzi z serwera USGS
-            if (data && data.elevation !== undefined) {
-                return data.elevation;
+            if (!isNaN(elevation)) {
+                return elevation;
             }
             return null;
         } catch (error) {
-            console.error("Błąd zapytania o wysokość:", error);
+            console.error("Błąd polskiego API wysokości:", error);
             return null;
         }
     }
 
-    // Główna funkcja pobierająca dane na żywo (z poprawną ramką Google Maps)
+    // Główna funkcja pobierająca dane na żywo
     async function fetchLiveLocation() {
         try {
             const response = await fetch(FIREBASE_URL);
@@ -103,8 +91,8 @@
 
                 const timeLabel = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
 
-                // 1. Aktualizacja danych tekstowych
-                document.getElementById('gps-val').innerText = `Szerokość: ${lat.toFixed(5)} | Długość: ${lng.toFixed(5)}`;
+                // 1. Aktualizacja danych tekstowych na ekranie
+                document.getElementById('gps-val').innerText = "Szerokość: " + lat.toFixed(5) + " | Długość: " + lng.toFixed(5);
                 document.getElementById('time-val').innerText = timeLabel;
 
                 // 2. Aktualizacja mapy i wysokości przy zmianie pozycji
@@ -112,9 +100,8 @@
                     lastLat = lat;
                     lastLng = lng;
 
-                    // POPRAWIONA RAMKA GOOGLE: Wymuszenie czystego adresu osadzania, bez przekierowań na google.com
                     const mapBox = document.getElementById('map-container');
-                    const embedUrl = "https://google.com" + lat + "," + lng + "&z=14&t=p&output=embed";
+                    const embedUrl = "https://google.com" + lat + "," + lng + "&z=14&t=h&output=embed";
                     
                     mapBox.innerHTML = '<iframe width="100%" height="100%" frameborder="0" style="border:0; border-radius:8px;" src="' + embedUrl + '" allowfullscreen></iframe>';
 
@@ -123,9 +110,9 @@
                     const elevation = await getElevation(lat, lng);
                     
                     if (elevation !== null && !isNaN(elevation)) {
-                        document.getElementById('alt-val').innerText = `${Math.round(elevation)} m n.p.m.`;
+                        document.getElementById('alt-val').innerText = Math.round(elevation) + " m n.p.m.";
                     } else {
-                        document.getElementById('alt-val').innerText = "Błąd sieci";
+                        document.getElementById('alt-val').innerText = "Błąd pomiaru";
                     }
                 }
             }
@@ -133,14 +120,14 @@
             console.error("Błąd pobierania z Firebase:", error);
         }
     }
- 
+
     // Start pętli odświeżania po pełnym załadowaniu struktury HTML
     window.addEventListener('DOMContentLoaded', () => {
-        // Sprawdzaj bazę co 7 sekund (szybsza reakcja na żywo)
+        // Odpytywanie bazy co 7 sekund
         setInterval(fetchLiveLocation, 7000);
         fetchLiveLocation();
     });
 </script>
- 
+
 </body>
 </html>
