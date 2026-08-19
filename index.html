@@ -49,19 +49,19 @@
     // --- KONFIGURACJA ---
     const FIREBASE_URL = "https://ggr-live-tracker-default-rtdb.europe-west1.firebasedatabase.app/lokalizacja.json"; 
 
-    // Zmienne pamięci podręcznej, aby nie przeładowywać mapy bez potrzeby
+// Zmienne pamięci podręcznej
     let lastLat = null;
     let lastLng = null;
 
-    // Bezbłędna funkcja pobierająca wysokość z polskiego rządowego Geoportalu (GUGiK)
+    // Pancerna funkcja wysokości n.p.m. z wykorzystaniem natywnego obiektu URL
     async function getElevation(lat, lng) {
         try {
-            const x = parseFloat(lng);
-            const y = parseFloat(lat);
+            // Budujemy adres w sposób uniemożliwiający wtyczkom zepsucie struktury
+            const apiBase = new URL("https://gugik.gov.pl");
+            apiBase.searchParams.append("x", parseFloat(lng).toString());
+            apiBase.searchParams.append("y", parseFloat(lat).toString());
             
-            const url = "https://gugik.gov.pl" + x + "&y=" + y;
-            
-            const response = await fetch(url);
+            const response = await fetch(apiBase.toString());
             if (!response.ok) return null;
             
             const text = await response.text();
@@ -77,7 +77,7 @@
         }
     }
 
-    // Główna funkcja pobierająca dane na żywo
+    // Główna funkcja pobierająca dane na żywo z pancernym generatorem mapy
     async function fetchLiveLocation() {
         try {
             const response = await fetch(FIREBASE_URL);
@@ -102,14 +102,15 @@
 
                     const mapBox = document.getElementById('map-container');
                     
-                    // NOWY, BEZPIECZNY KOD (Przeglądarka sama zbuduje poprawną strukturę adresu):
-                    const urlObj = new URL("https://google.com");
-                    urlObj.searchParams.append("q", lat + "," + lng);
-                    urlObj.searchParams.append("z", "14");
-                    urlObj.searchParams.append("t", "h");
-                    urlObj.searchParams.append("output", "embed");
+                    // Pancerny generator adresu Google Maps - wtyczki nie mogą go przekierować na stronę główną
+                    const googleMapUrl = new URL("https://google.com");
+                    googleMapUrl.searchParams.append("q", lat + "," + lng);
+                    googleMapUrl.searchParams.append("z", "14");
+                    googleMapUrl.searchParams.append("t", "h");
+                    googleMapUrl.searchParams.append("output", "embed");
                     
-                    mapBox.innerHTML = '<iframe width="100%" height="100%" frameborder="0" style="border:0; border-radius:8px;" src="' + urlObj.toString() + '" allowfullscreen></iframe>';
+                    // Wstrzyknięcie czystej, bezpiecznej ramki
+                    mapBox.innerHTML = '<iframe width="100%" height="100%" frameborder="0" style="border:0; border-radius:8px;" src="' + googleMapUrl.toString() + '" allowfullscreen></iframe>';
 
                     // 3. Pobranie wysokości n.p.m.
                     document.getElementById('alt-val').innerText = "Mierzę...";
@@ -123,13 +124,12 @@
                 }
             }
         } catch (error) {
-            console.error("Błąd pobierania z Firebase:", error);
+            console.error("Błąd bazy danych:", error);
         }
     }
 
     // Start pętli odświeżania po pełnym załadowaniu struktury HTML
     window.addEventListener('DOMContentLoaded', () => {
-        // Odpytywanie bazy co 7 sekund
         setInterval(fetchLiveLocation, 7000);
         fetchLiveLocation();
     });
