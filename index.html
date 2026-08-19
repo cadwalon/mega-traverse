@@ -101,9 +101,15 @@
                     lastLng = lng;
 
                     const mapBox = document.getElementById('map-container');
-                    const embedUrl = "https://google.com" + lat + "," + lng + "&z=14&t=h&output=embed";
                     
-                    mapBox.innerHTML = '<iframe width="100%" height="100%" frameborder="0" style="border:0; border-radius:8px;" src="' + embedUrl + '" allowfullscreen></iframe>';
+                    // NOWY, BEZPIECZNY KOD (Przeglądarka sama zbuduje poprawną strukturę adresu):
+                    const urlObj = new URL("https://google.com");
+                    urlObj.searchParams.append("q", lat + "," + lng);
+                    urlObj.searchParams.append("z", "14");
+                    urlObj.searchParams.append("t", "h");
+                    urlObj.searchParams.append("output", "embed");
+                    
+                    mapBox.innerHTML = '<iframe width="100%" height="100%" frameborder="0" style="border:0; border-radius:8px;" src="' + urlObj.toString() + '" allowfullscreen></iframe>';
 
                     // 3. Pobranie wysokości n.p.m.
                     document.getElementById('alt-val').innerText = "Mierzę...";
