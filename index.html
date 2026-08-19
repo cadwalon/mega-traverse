@@ -57,45 +57,39 @@
     let lastLat = null;
     let lastLng = null;
  
-    // W 100% poprawny adres URL i obsługa API Open-Meteo
+    // Alternatywna funkcja pobierająca wysokość z serwerów USGS (U.S. Geological Survey)
     async function getElevation(lat, lng) {
         try {
-            const fixedLat = parseFloat(lat).toFixed(4);
-            const fixedLng = parseFloat(lng).toFixed(4);
+            const fixedLat = parseFloat(lat).toFixed(5);
+            const fixedLng = parseFloat(lng).toFixed(5);
             
-            // KLUCZOWA POPRAWKA: Pełny, poprawny adres z domeną api. i znakiem zapytania
-            const url = `https://open-meteo.com?latitude=${fixedLat}&longitude=${fixedLng}`;
+            // Używamy darmowego, rządowego API, które rzadko bywa blokowane przez firmowe zapory
+            const url = "https://nationalmap.gov" + fixedLng + "&y=" + fixedLat + "&units=Meters&output=json";
             
             const response = await fetch(url);
-// Jeśli serwer zwrócił błąd, pobieramy tekst odpowiedzi, aby zobaczyć co poszło nie tak
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error("Serwer Open-Meteo zwrócił błąd:", errorText);
-                return null;
-            }
+            if (!response.ok) return null;
             
-            // Pobieramy surowy tekst, zanim spróbujemy zamienić go na JSON
             const text = await response.text();
             
-            // Jeśli tekst zaczyna się od kodu HTML, wypisujemy go w konsoli i przerywamy, by uniknąć błędu crashu
+            // Zabezpieczenie przed stroną błędu HTML
             if (text.trim().startsWith("<")) {
-                console.warn("ZAMIAST DANYCH OTRZYMANO STRONĘ HTML (Prawdopodobnie blokada sieci):", text.substring(0, 500));
+                console.warn("Zapora sieciowa zablokowała serwer wysokości.");
                 return null;
             }
             
-            // Jeśli wszystko jest ok, bezpiecznie zamieniamy tekst na obiekt JSON
             const data = JSON.parse(text);
+            // Struktura odpowiedzi z serwera USGS
             if (data && data.elevation !== undefined) {
-                return Array.isArray(data.elevation) ? data.elevation[0] : data.elevation;
+                return data.elevation;
             }
             return null;
         } catch (error) {
-            console.error("Błąd API wysokości:", error);
+            console.error("Błąd zapytania o wysokość:", error);
             return null;
         }
     }
- 
-    // Główna funkcja pobierająca dane na żywo (z mapami Google jako tłem)
+
+    // Główna funkcja pobierająca dane na żywo (z poprawną ramką Google Maps)
     async function fetchLiveLocation() {
         try {
             const response = await fetch(FIREBASE_URL);
@@ -106,32 +100,24 @@
                 const lng = parseFloat(data.lng);
                 
                 if (lat === 0 || lng === 0 || isNaN(lat) || isNaN(lng)) return;
- 
+
                 const timeLabel = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
- 
-                // 1. Aktualizacja danych tekstowych na ekranie
+
+                // 1. Aktualizacja danych tekstowych
                 document.getElementById('gps-val').innerText = `Szerokość: ${lat.toFixed(5)} | Długość: ${lng.toFixed(5)}`;
                 document.getElementById('time-val').innerText = timeLabel;
- 
+
                 // 2. Aktualizacja mapy i wysokości przy zmianie pozycji
                 if (lat !== lastLat || lng !== lastLng) {
                     lastLat = lat;
                     lastLng = lng;
- 
-                    // OMIJANIE FIREWALLA: Wykorzystujemy oficjalny, darmowy embed Map Google
-                    // Generuje on pełnoprawną mapę satelitarną/terenową wewnątrz ramki iframe
+
+                    // POPRAWIONA RAMKA GOOGLE: Wymuszenie czystego adresu osadzania, bez przekierowań na google.com
                     const mapBox = document.getElementById('map-container');
+                    const embedUrl = "https://google.com" + lat + "," + lng + "&z=14&t=p&output=embed";
                     
-                    // Czyścimy zawartość starego kontenera i wstrzykujemy niezawodną ramkę Google Maps
-                    mapBox.innerHTML = `<iframe
-                        width="100%"
-                        height="100%"
-                        frameborder="0"
-                        style="border:0; border-radius:8px;"
-                        src="https://google.com?${lat},${lng}&z=14&output=embed"
-                        allowfullscreen>
-                    </iframe>`;
- 
+                    mapBox.innerHTML = '<iframe width="100%" height="100%" frameborder="0" style="border:0; border-radius:8px;" src="' + embedUrl + '" allowfullscreen></iframe>';
+
                     // 3. Pobranie wysokości n.p.m.
                     document.getElementById('alt-val').innerText = "Mierzę...";
                     const elevation = await getElevation(lat, lng);
@@ -139,7 +125,7 @@
                     if (elevation !== null && !isNaN(elevation)) {
                         document.getElementById('alt-val').innerText = `${Math.round(elevation)} m n.p.m.`;
                     } else {
-                        document.getElementById('alt-val').innerText = "Błąd pomiaru";
+                        document.getElementById('alt-val').innerText = "Błąd sieci";
                     }
                 }
             }
