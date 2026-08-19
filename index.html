@@ -34,7 +34,7 @@
         </div>
     </div>
 
-    <!-- Samowystarczalny wizualizator pozycji GPS (ramka Google Maps) -->
+    <!-- Samowystarczalny wizualizator pozycji GPS (Niezawodna mapa OpenStreetMap) -->
     <div class="map-box" id="map-container">
         <p style="color: #666;">Czekam na sygnał z telefonu, aby wyrysować mapę...</p>
     </div>
@@ -49,35 +49,33 @@
     // --- KONFIGURACJA ---
     const FIREBASE_URL = "https://ggr-live-tracker-default-rtdb.europe-west1.firebasedatabase.app/lokalizacja.json"; 
 
-// Zmienne pamięci podręcznej
+    // Zmienne pamięci podręcznej
     let lastLat = null;
     let lastLng = null;
 
-    // Pancerna funkcja wysokości n.p.m. z wykorzystaniem natywnego obiektu URL
+    // Bezpieczna, odporna na CORS i wtyczki funkcja pobierania wysokości n.p.m.
     async function getElevation(lat, lng) {
         try {
-            // Budujemy adres w sposób uniemożliwiający wtyczkom zepsucie struktury
-            const apiBase = new URL("https://gugik.gov.pl");
-            apiBase.searchParams.append("x", parseFloat(lng).toString());
-            apiBase.searchParams.append("y", parseFloat(lat).toString());
+            // Oficjalny punkt końcowy Open-Meteo zbudowany przez natywny obiekt URL
+            const apiUrl = new URL("https://api.open-meteo.com/v1/elevation");
+            apiUrl.searchParams.append("latitude", parseFloat(lat).toFixed(4));
+            apiUrl.searchParams.append("longitude", parseFloat(lng).toFixed(4));
             
-            const response = await fetch(apiBase.toString());
+            const response = await fetch(apiUrl.toString());
             if (!response.ok) return null;
             
-            const text = await response.text();
-            const elevation = parseFloat(text.trim());
-            
-            if (!isNaN(elevation)) {
-                return elevation;
+            const data = await response.json();
+            if (data && data.elevation !== undefined) {
+                return Array.isArray(data.elevation) ? data.elevation[0] : data.elevation;
             }
             return null;
         } catch (error) {
-            console.error("Błąd polskiego API wysokości:", error);
+            console.error("Błąd pobierania wysokości:", error);
             return null;
         }
     }
 
-    // Główna funkcja pobierająca dane na żywo z pancernym generatorem mapy
+    // Główna funkcja pobierająca dane na żywo
     async function fetchLiveLocation() {
         try {
             const response = await fetch(FIREBASE_URL);
@@ -102,15 +100,18 @@
 
                     const mapBox = document.getElementById('map-container');
                     
-                    // Pancerny generator adresu Google Maps - wtyczki nie mogą go przekierować na stronę główną
-                    const googleMapUrl = new URL("https://google.com");
-                    googleMapUrl.searchParams.append("q", lat + "," + lng);
-                    googleMapUrl.searchParams.append("z", "14");
-                    googleMapUrl.searchParams.append("t", "h");
-                    googleMapUrl.searchParams.append("output", "embed");
+                    // Definiujemy obszar wyświetlania wokół pozycji (BBOX) dla OpenStreetMap
+                    const offset = 0.005;
+                    const minLng = lng - offset;
+                    const minLat = lat - offset;
+                    const maxLng = lng + offset;
+                    const maxLat = lat + offset;
                     
-                    // Wstrzyknięcie czystej, bezpiecznej ramki
-                    mapBox.innerHTML = '<iframe width="100%" height="100%" frameborder="0" style="border:0; border-radius:8px;" src="' + googleMapUrl.toString() + '" allowfullscreen></iframe>';
+                    // Budujemy pancerny link embed OpenStreetMap, którego wtyczki nie są w stanie uszkodzić
+                    const openStreetMapUrl = "https://openstreetmap.org" + minLng + "," + minLat + "," + maxLng + "," + maxLat + "&layer=mapnik&marker=" + lat + "," + lng;
+                    
+                    // Wstrzyknięcie czystej ramki mapy
+                    mapBox.innerHTML = '<iframe width="100%" height="100%" frameborder="0" style="border:0; border-radius:8px;" src="' + openStreetMapUrl + '" allowfullscreen></iframe>';
 
                     // 3. Pobranie wysokości n.p.m.
                     document.getElementById('alt-val').innerText = "Mierzę...";
@@ -119,7 +120,7 @@
                     if (elevation !== null && !isNaN(elevation)) {
                         document.getElementById('alt-val').innerText = Math.round(elevation) + " m n.p.m.";
                     } else {
-                        document.getElementById('alt-val').innerText = "Błąd pomiaru";
+                        document.getElementById('alt-val').innerText = "Błąd sieci";
                     }
                 }
             }
@@ -130,6 +131,7 @@
 
     // Start pętli odświeżania po pełnym załadowaniu struktury HTML
     window.addEventListener('DOMContentLoaded', () => {
+        // Odpytywanie bazy co 7 sekund
         setInterval(fetchLiveLocation, 7000);
         fetchLiveLocation();
     });
