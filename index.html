@@ -67,9 +67,24 @@
             const url = `https://open-meteo.com?latitude=${fixedLat}&longitude=${fixedLng}`;
             
             const response = await fetch(url);
-            if (!response.ok) return null;
+// Jeśli serwer zwrócił błąd, pobieramy tekst odpowiedzi, aby zobaczyć co poszło nie tak
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error("Serwer Open-Meteo zwrócił błąd:", errorText);
+                return null;
+            }
             
-            const data = await response.json();
+            // Pobieramy surowy tekst, zanim spróbujemy zamienić go na JSON
+            const text = await response.text();
+            
+            // Jeśli tekst zaczyna się od kodu HTML, wypisujemy go w konsoli i przerywamy, by uniknąć błędu crashu
+            if (text.trim().startsWith("<")) {
+                console.warn("ZAMIAST DANYCH OTRZYMANO STRONĘ HTML (Prawdopodobnie blokada sieci):", text.substring(0, 500));
+                return null;
+            }
+            
+            // Jeśli wszystko jest ok, bezpiecznie zamieniamy tekst na obiekt JSON
+            const data = JSON.parse(text);
             if (data && data.elevation !== undefined) {
                 return Array.isArray(data.elevation) ? data.elevation[0] : data.elevation;
             }
